@@ -15,6 +15,7 @@ from .serializers import (
     JoinRequestSerializer,
     JoinRequestDetailSerializer,
 )
+from .utils import generate_otp, verify_otp
 
 User = get_user_model()
 
@@ -118,6 +119,17 @@ def use_code_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+    # Validate duplicate email/phone
+    if User.objects.filter(email=data["email"]).exists():
+        return Response({"detail": "An account with this email already exists."}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(phone=data["phone"]).exists():
+        return Response({"detail": "An account with this phone number already exists."}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Verify OTP
+    otp_code = request.data.get("otp")
+    if not otp_code or not verify_otp(data["phone"], otp_code):
+        return Response({"detail": "Invalid or expired OTP."}, status=status.HTTP_400_BAD_REQUEST)
+
     # Create the user
     new_user = User.objects.create_user(
         email=data["email"],
@@ -149,8 +161,56 @@ def join_request_view(request):
     serializer = JoinRequestSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    
+    data = serializer.validated_data
+    if User.objects.filter(email=data["email"]).exists():
+        return Response({"detail": "Email already registered."}, status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(phone=data["phone"]).exists():
+        return Response({"detail": "Phone already registered."}, status=status.HTTP_400_BAD_REQUEST)
+
     serializer.save()
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+# ─── Delete Account ───────────────────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def delete_account_view(request):
+    user = request.user
+    user.delete()
+    return Response({"detail": "Account deleted successfully."}, status=status.HTTP_200_OK)
+
+
+# ─── Delete Invite Code ───────────────────────────────────────────────────────
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_code_view(request, pk):
+    user = request.user
+    try:
+        invite = InviteCode.objects.get(pk=pk, created_by=user)
+    except InviteCode.DoesNotExist:
+        return Response({"detail": "Code not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if not invite.is_valid():
+        return Response({"detail": "Only active/unused codes can be deleted."}, status=status.HTTP_400_BAD_REQUEST)
+
+    invite.delete()
+    return Response({"detail": "Code deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+
+# ─── Send OTP ─────────────────────────────────────────────────────────────────
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def send_otp_view(request):
+    phone = request.data.get("phone")
+    if not phone:
+        return Response({"detail": "Phone is required."}, status=status.HTTP_400_BAD_REQUEST)
+    
+    generate_otp(phone)
+    return Response({"detail": "OTP sent successfully."})
 
 
 # ─── List Pending Requests ────────────────────────────────────────────────────

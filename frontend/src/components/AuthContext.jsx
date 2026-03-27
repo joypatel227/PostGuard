@@ -12,6 +12,29 @@ export function AuthProvider({ children }) {
     }
   })
 
+  const [theme, setTheme] = useState(() => localStorage.getItem('postguard_theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('postguard_theme', theme)
+  }, [theme])
+
+  // Sync across tabs
+  useEffect(() => {
+    const handleStorage = (e) => {
+      if (e.key === 'user') {
+        setUser(e.newValue ? JSON.parse(e.newValue) : null)
+      }
+      if (e.key === 'postguard_theme') {
+        setTheme(e.newValue || 'dark')
+      }
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+
   const login = (userData, tokens) => {
     localStorage.setItem('access_token', tokens.access)
     localStorage.setItem('refresh_token', tokens.refresh)
@@ -27,7 +50,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user }}>
+    <AuthContext.Provider value={{ user, login, logout, isAuthenticated: !!user, theme, toggleTheme }}>
       {children}
     </AuthContext.Provider>
   )

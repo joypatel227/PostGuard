@@ -30,10 +30,21 @@ export default function AdminDashboard() {
     setGenLoading(false)
   }
 
-  const copyCode = () => {
-    if (!newCode) return
-    navigator.clipboard.writeText(newCode.code)
-    setCopied(true); setTimeout(() => setCopied(false), 2000)
+  const copyCode = (codeStr) => {
+    navigator.clipboard.writeText(codeStr)
+    setMsg('📋 Code copied to clipboard!')
+    setTimeout(() => setMsg(''), 2000)
+  }
+
+  const deleteCode = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this active code?')) return
+    try {
+      await api.delete(`/auth/codes/${id}/`)
+      setMsg('🗑 Code deleted.')
+      fetchCodes()
+    } catch (e) {
+      setMsg(`❌ ${e.response?.data?.detail || 'Error deleting code'}`)
+    }
   }
 
   const approveReq = async (id) => {
@@ -165,7 +176,7 @@ export default function AdminDashboard() {
               {newCode && (
                 <div className="code-display">
                   <span className="code-value">{newCode.code}</span>
-                  <button className="copy-btn" onClick={copyCode}>{copied ? '✅ Copied!' : '📋 Copy'}</button>
+                  <button className="copy-btn" onClick={() => copyCode(newCode.code)}>📋 Copy</button>
                 </div>
               )}
             </div>
@@ -176,16 +187,35 @@ export default function AdminDashboard() {
                   <div className="empty-state"><div className="empty-icon">🔐</div><p>No codes yet.</p></div>
                 ) : (
                   <table>
-                    <thead><tr><th>Code</th><th>For</th><th>Status</th><th>Expires</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>For</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
                     <tbody>
-                      {codes.map(c => (
-                        <tr key={c.id}>
-                          <td><span style={{ fontFamily: 'monospace', fontSize: '1.1rem', letterSpacing: 4 }}>{c.code}</span></td>
-                          <td><span className={`badge badge-${c.role_for}`}>{c.role_for}</span></td>
-                          <td><span className={`badge ${c.used ? 'badge-approved' : 'badge-pending'}`}>{c.used ? 'Used' : 'Active'}</span></td>
-                          <td style={{ color: 'var(--clr-muted)', fontSize: '0.8rem' }}>{new Date(c.expires_at).toLocaleString()}</td>
-                        </tr>
-                      ))}
+                      {codes.map(c => {
+                        const isActive = !c.used && new Date(c.expires_at) > new Date()
+                        return (
+                          <tr key={c.id}>
+                            <td><span style={{ fontFamily: 'monospace', fontSize: '1.1rem', letterSpacing: 4 }}>{c.code}</span></td>
+                            <td><span className={`badge badge-${c.role_for}`}>{c.role_for}</span></td>
+                            <td><span className={`badge ${isActive ? 'badge-pending' : 'badge-approved'}`}>{c.used ? 'Used' : isActive ? 'Active' : 'Expired'}</span></td>
+                            <td style={{ color: 'var(--clr-muted)', fontSize: '0.8rem' }}>{new Date(c.expires_at).toLocaleString()}</td>
+                            <td>
+                              <div className="action-row">
+                                <button className="btn btn-ghost" onClick={() => copyCode(c.code)} title="Share/Copy">🔗</button>
+                                {isActive && (
+                                  <button className="btn btn-danger" style={{ padding: '6px 10px' }} onClick={() => deleteCode(c.id)} title="Delete Active Code">🗑</button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 )}

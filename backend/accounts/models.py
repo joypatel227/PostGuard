@@ -60,7 +60,11 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 def generate_invite_code():
-    return "".join(random.choices(string.ascii_uppercase, k=6))
+    letters = random.choices(string.ascii_uppercase, k=4)
+    numbers = random.choices(string.digits, k=2)
+    code_list = letters + numbers
+    random.shuffle(code_list)
+    return "".join(code_list)
 
 
 class InviteCode(models.Model):
