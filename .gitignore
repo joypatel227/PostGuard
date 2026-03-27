@@ -1,18 +1,40 @@
-# Node (React)
+# ── Node / React ─────────────────────────────────────────────
 node_modules/
+dist/
+.vite/
 
-# Python
+# ── Python ────────────────────────────────────────────────────
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+*.egg-info/
 
-# Environment files
+# ── Environment / Secrets ─────────────────────────────────────
 .env
+.env.local
+.env.*.local
 
-# Database
+# ── Database ──────────────────────────────────────────────────
 db.sqlite3
+*.sqlite3
 
-# OS files
+# ── Seed / Scratch Scripts ────────────────────────────────────
+backend/seed_users.py
+
+# ── OS ────────────────────────────────────────────────────────
 .DS_Store
+Thumbs.db
 
-# Logs
+# ── IDE ───────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.user
+
+# ── Logs ─────────────────────────────────────────────────────
 *.log

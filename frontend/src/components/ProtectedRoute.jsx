@@ -1,0 +1,22 @@
+import { Navigate } from 'react-router-dom'
+import { useAuth } from './AuthContext'
+
+export default function ProtectedRoute({ children, allowedRoles }) {
+  const { user, isAuthenticated } = useAuth()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+    // Redirect to their own dashboard
+    const redirectMap = {
+      lord: '/lord',
+      admin: '/admin',
+      supervisor: '/supervisor',
+    }
+    return <Navigate to={redirectMap[user?.role] || '/login'} replace />
+  }
+
+  return children
+}
