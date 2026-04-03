@@ -2,50 +2,56 @@ import { createContext, useContext, useState, useEffect } from 'react'
 
 const AuthContext = createContext(null)
 
+// ── Use sessionStorage so every browser tab has its own independent session ──
+// localStorage is shared across all tabs → same origin → same user everywhere
+// sessionStorage is isolated per tab → each tab can log in as a different role
+const storage = sessionStorage
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
-      const stored = localStorage.getItem('user')
+      const stored = storage.getItem('user')
       return stored ? JSON.parse(stored) : null
     } catch {
       return null
     }
   })
+  const [theme, setTheme] = useState('dark')
 
-  const [theme, setTheme] = useState(() => localStorage.getItem('postguard_theme') || 'dark')
+  // When user changes/logs in, automatically restore their specific theme
+  useEffect(() => {
+    if (user && user.id) {
+      const savedTheme = localStorage.getItem(`theme_${user.id}`)
+      if (savedTheme) setTheme(savedTheme)
+      else setTheme('dark') // Default
+    } else {
+      setTheme('dark') // Default for logged out users
+    }
+  }, [user])
 
+  // Sync visually and save specifically for the logged in user
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('postguard_theme', theme)
-  }, [theme])
-
-  // Sync across tabs
-  useEffect(() => {
-    const handleStorage = (e) => {
-      if (e.key === 'user') {
-        setUser(e.newValue ? JSON.parse(e.newValue) : null)
-      }
-      if (e.key === 'postguard_theme') {
-        setTheme(e.newValue || 'dark')
-      }
+    if (user && user.id) {
+      localStorage.setItem(`theme_${user.id}`, theme)
     }
-    window.addEventListener('storage', handleStorage)
-    return () => window.removeEventListener('storage', handleStorage)
-  }, [])
+  }, [theme, user])
 
-  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark')
+  }
 
   const login = (userData, tokens) => {
-    localStorage.setItem('access_token', tokens.access)
-    localStorage.setItem('refresh_token', tokens.refresh)
-    localStorage.setItem('user', JSON.stringify(userData))
+    storage.setItem('access_token', tokens.access)
+    storage.setItem('refresh_token', tokens.refresh)
+    storage.setItem('user', JSON.stringify(userData))
     setUser(userData)
   }
 
   const logout = () => {
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('refresh_token')
-    localStorage.removeItem('user')
+    storage.removeItem('access_token')
+    storage.removeItem('refresh_token')
+    storage.removeItem('user')
     setUser(null)
   }
 

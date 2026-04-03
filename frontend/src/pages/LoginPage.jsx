@@ -24,7 +24,10 @@ export default function LoginPage() {
       const { tokens, user } = res.data
       login(user, tokens)
       // Redirect based on role
-      const dest = user.role === 'lord' ? '/lord' : user.role === 'admin' ? '/admin' : '/supervisor'
+      let dest = '/supervisor'
+      if (user.role === 'lord') dest = '/lord'
+      else if (user.role === 'owner') dest = '/owner'
+      else if (user.role === 'admin') dest = '/admin'
       navigate(dest, { replace: true })
     } catch (err) {
       setError(

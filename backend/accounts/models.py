@@ -26,38 +26,62 @@ class UserManager(BaseUserManager):
 
 
 class User(AbstractBaseUser, PermissionsMixin):
+    """
+    Role Hierarchy:
+      lord  → owns the PostGuard SaaS platform (Shriyu Nexus)
+      owner → security agency owner (buys PostGuard)
+      admin → office manager for the agency
+      supervisor → field supervisor visiting sites
+    Guards are NOT system users — they are managed as Guard entities.
+    """
     ROLE_CHOICES = [
-        ("lord", "Lord"),
-        ("admin", "Admin"),
+        ("lord",       "Lord"),
+        ("owner",      "Owner"),
+        ("admin",      "Admin"),
         ("supervisor", "Supervisor"),
     ]
     STATUS_CHOICES = [
-        ("pending", "Pending"),
+        ("pending",  "Pending"),
         ("approved", "Approved"),
         ("rejected", "Rejected"),
     ]
 
-    email = models.EmailField(unique=True)
-    name = models.CharField(max_length=100)
-    phone = models.CharField(max_length=15, unique=True)
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="admin")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="approved")
+    email    = models.EmailField(unique=True)
+    name     = models.CharField(max_length=100)
+    phone    = models.CharField(max_length=15, unique=True)
+    role     = models.CharField(max_length=20, choices=ROLE_CHOICES, default="owner")
+    status   = models.CharField(max_length=20, choices=STATUS_CHOICES, default="approved")
+
+    # The user who created this account (lord→owner, owner→admin, admin/owner→supervisor)
     created_by = models.ForeignKey(
-        "self", null=True, blank=True, on_delete=models.SET_NULL, related_name="created_users"
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="created_users"
     )
 
-    is_active = models.BooleanField(default=True)
-    is_staff = models.BooleanField(default=False)
-    date_joined = models.DateTimeField(default=timezone.now)
+    # Agency this user belongs to (null for lord; owner is the head of an agency)
+    agency = models.ForeignKey(
+        "company.Agency", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="members"
+    )
 
-    USERNAME_FIELD = "email"
+    is_active  = models.BooleanField(default=True)
+    is_staff   = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(default=timezone.now)
+    last_seen  = models.DateTimeField(null=True, blank=True)
+
+    USERNAME_FIELD  = "email"
     REQUIRED_FIELDS = ["name", "phone"]
 
     objects = UserManager()
 
+    class Meta:
+        ordering = ["name"]
+
     def __str__(self):
         return f"{self.name} ({self.role})"
 
+
+# ── Invite Codes ──────────────────────────────────────────────────────────────
 
 def generate_invite_code():
     letters = random.choices(string.ascii_uppercase, k=4)
@@ -69,15 +93,19 @@ def generate_invite_code():
 
 class InviteCode(models.Model):
     ROLE_CHOICES = [
-        ("admin", "Admin"),
+        ("owner",      "Owner"),
+        ("admin",      "Admin"),
         ("supervisor", "Supervisor"),
     ]
 
-    code = models.CharField(max_length=6, unique=True, default=generate_invite_code)
-    role_for = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    code      = models.CharField(max_length=6, unique=True, default=generate_invite_code)
+    role_for  = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    # For owner codes the lord sets the agency name at code generation time
+    agency_name = models.CharField(max_length=150, blank=True, default="")
+
     created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name="generated_codes")
-    used = models.BooleanField(default=False)
-    used_by = models.ForeignKey(
+    used       = models.BooleanField(default=False)
+    used_by    = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="used_code"
     )
     expires_at = models.DateTimeField()
@@ -95,34 +123,40 @@ class InviteCode(models.Model):
         return f"{self.code} → {self.role_for} (used={self.used})"
 
 
+# ── Join Requests ─────────────────────────────────────────────────────────────
+
 class JoinRequest(models.Model):
     ROLE_CHOICES = [
-        ("admin", "Admin"),
+        ("owner",      "Owner"),
+        ("admin",      "Admin"),
         ("supervisor", "Supervisor"),
     ]
     STATUS_CHOICES = [
-        ("pending", "Pending"),
+        ("pending",  "Pending"),
         ("approved", "Approved"),
         ("rejected", "Rejected"),
     ]
 
-    name = models.CharField(max_length=100)
-    email = models.EmailField()
-    phone = models.CharField(max_length=15)
+    name           = models.CharField(max_length=100)
+    email          = models.EmailField()
+    phone          = models.CharField(max_length=15)
     requested_role = models.CharField(max_length=20, choices=ROLE_CHOICES)
-    message = models.TextField(blank=True)
+    message        = models.TextField(blank=True)
+    raw_password   = models.CharField(max_length=255, blank=True, default="")
+    agency         = models.ForeignKey(
+        "company.Agency", null=True, blank=True, on_delete=models.CASCADE, related_name="join_requests"
+    )
 
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
+    status      = models.CharField(max_length=20, choices=STATUS_CHOICES, default="pending")
     reviewed_by = models.ForeignKey(
         User, null=True, blank=True, on_delete=models.SET_NULL, related_name="reviewed_requests"
     )
-    # Which admin submitted/owns this (for supervisor requests scoped to an admin)
-    parent_admin = models.ForeignKey(
-        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="supervisor_requests"
+    parent_user = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="child_requests"
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
-        return f"{self.name} wants to be {self.requested_role} ({self.status})"
+        return f"{self.name} → {self.requested_role} ({self.status})"

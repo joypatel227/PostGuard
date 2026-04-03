@@ -1,7 +1,6 @@
 """
-Django settings for core project.
+Django settings for core project — PostGuard SaaS
 """
-
 from pathlib import Path
 from datetime import timedelta
 
@@ -13,9 +12,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -33,6 +30,10 @@ INSTALLED_APPS = [
     'accounts',
     'company',
     'attendance',
+    'supervisor',
+    'wallet',
+    'billing',
+    'salary',
 ]
 
 MIDDLEWARE = [
@@ -65,7 +66,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'core.wsgi.application'
 
-# Database
+# Database — PostgreSQL
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -100,6 +101,11 @@ SIMPLE_JWT = {
 # CORS (open for dev)
 CORS_ALLOW_ALL_ORIGINS = True
 
+# File uploads (attendance images, bill files, payment screenshots)
+import os
+MEDIA_URL  = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -109,10 +115,9 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
-USE_I18N = True
-USE_TZ = True
+TIME_ZONE     = 'Asia/Kolkata'
+USE_I18N      = True
+USE_TZ        = True
 
 STATIC_URL = 'static/'
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

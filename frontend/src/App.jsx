@@ -6,8 +6,27 @@ import LoginPage from './pages/LoginPage'
 import RegisterWithCodePage from './pages/RegisterWithCodePage'
 import JoinRequestPage from './pages/JoinRequestPage'
 import LordDashboard from './pages/LordDashboard'
+import OwnerDashboard from './pages/OwnerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 import SupervisorDashboard from './pages/SupervisorDashboard'
+import AgencyBlockedPage from './pages/AgencyBlockedPage'
+import { useAuth } from './components/AuthContext'
+
+function HomeRedirector() {
+  const { user } = useAuth()
+  if (!user || !user.role) return <Navigate to="/login" replace />
+  
+  // Lord can always access dashboard
+  if (user.role === 'lord') return <Navigate to="/lord" replace />
+  
+  // Other roles must have an active agency
+  if (!user.agency) return <Navigate to="/blocked" replace />
+  
+  const validRoles = ['owner', 'admin', 'supervisor']
+  if (!validRoles.includes(user.role)) return <Navigate to="/login" replace />
+  
+  return <Navigate to={`/${user.role}`} replace />
+}
 
 export default function App() {
   return (
@@ -17,7 +36,8 @@ export default function App() {
           {/* Public */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterWithCodePage />} />
-          <Route path="/join-request" element={<JoinRequestPage />} />
+          <Route path="/join" element={<JoinRequestPage />} />
+          <Route path="/blocked" element={<AgencyBlockedPage />} />
 
           {/* Protected – Lord only */}
           <Route
@@ -25,6 +45,16 @@ export default function App() {
             element={
               <ProtectedRoute allowedRoles={['lord']}>
                 <LordDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected – Owner only */}
+          <Route
+            path="/owner"
+            element={
+              <ProtectedRoute allowedRoles={['owner']}>
+                <OwnerDashboard />
               </ProtectedRoute>
             }
           />
@@ -50,8 +80,8 @@ export default function App() {
           />
 
           {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<HomeRedirector />} />
+          <Route path="*" element={<HomeRedirector />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

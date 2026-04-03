@@ -1,10 +1,14 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Sidebar from '../components/Sidebar'
 import { useAuth } from '../components/AuthContext'
 
 export default function SupervisorDashboard() {
   const { user } = useAuth()
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(() => sessionStorage.getItem('supervisor_active_tab') || 'overview')
+  
+  useEffect(() => {
+    sessionStorage.setItem('supervisor_active_tab', tab)
+  }, [tab])
 
   return (
     <div className="dashboard-layout">

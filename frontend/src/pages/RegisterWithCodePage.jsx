@@ -1,15 +1,23 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../components/AuthContext'
 import api from '../services/api'
 
 export default function RegisterWithCodePage() {
   const [step, setStep] = useState(1)  // 1 = enter code, 2 = fill details, 3 = OTP
-  const [form, setForm] = useState({ code: '', name: '', email: '', phone: '', password: '', confirm: '', otp: '' })
+  const [form, setForm] = useState({ code: '', name: '', email: '', phone: '', password: '', confirm: '', otp: '', agency_id: '' })
+  const [devOtp, setDevOtp] = useState('')   // shows OTP on screen in dev mode
+  const [roleContext, setRoleContext] = useState({ role: '', agency: '' })
+  const [agencies, setAgencies] = useState([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const { login } = useAuth()
   const navigate = useNavigate()
+
+  useEffect(() => {
+    // Only used if they are registering as an owner
+    api.get('/company/public-agencies/').then(r => setAgencies(r.data)).catch(() => {})
+  }, [])
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -22,7 +30,17 @@ export default function RegisterWithCodePage() {
       setError('Code must be exactly 6 characters.')
       return
     }
-    setStep(2)
+    setLoading(true)
+    setError('')
+    try {
+      const res = await api.post('/auth/validate-code/', { code: form.code })
+      setRoleContext({ role: res.data.role_for, agency: res.data.agency_name })
+      setStep(2)
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Invalid or expired invite code.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handleSendOtp = async (e) => {
@@ -34,7 +52,9 @@ export default function RegisterWithCodePage() {
     setLoading(true)
     setError('')
     try {
-      await api.post('/auth/send-otp/', { phone: form.phone })
+      const res = await api.post('/auth/send-otp/', { phone: form.phone })
+      // Dev mode: API returns otp in response for easy testing
+      if (res.data?.otp) setDevOtp(res.data.otp)
       setStep(3)
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to send OTP. Check your phone number.')
@@ -55,11 +75,15 @@ export default function RegisterWithCodePage() {
         phone: form.phone,
         password: form.password,
         otp: form.otp,
+        agency_id: form.agency_id
       }
       const res = await api.post('/auth/use-code/', payload)
       const { tokens, user } = res.data
       login(user, tokens)
-      const dest = user.role === 'admin' ? '/admin' : '/supervisor'
+      let dest = '/supervisor'
+      if (user.role === 'lord') dest = '/lord'
+      else if (user.role === 'owner') dest = '/owner'
+      else if (user.role === 'admin') dest = '/admin'
       navigate(dest, { replace: true })
     } catch (err) {
       const data = err.response?.data
@@ -84,7 +108,12 @@ export default function RegisterWithCodePage() {
         <h1 className="auth-title">Join PostGuard</h1>
         <p className="auth-sub">
           {step === 1 && 'Enter your unique 6-digit invite code'}
-          {step === 2 && 'Tell us a bit about yourself'}
+          {step === 2 && (
+            <span>
+              Registering as <strong>{roleContext.role}</strong>
+              {roleContext.agency && ` for ${roleContext.agency}`}
+            </span>
+          )}
           {step === 3 && `Verify your phone number: ${form.phone}`}
         </p>
 
@@ -106,14 +135,26 @@ export default function RegisterWithCodePage() {
                 autoFocus
               />
             </div>
-            <button id="verify-code-btn" type="submit" className="btn btn-primary">
-              Continue →
+            <button id="verify-code-btn" type="submit" className="btn btn-primary" disabled={loading}>
+              {loading ? <span className="spinner" /> : 'Continue →'}
             </button>
           </form>
         )}
 
         {step === 2 && (
           <form onSubmit={handleSendOtp}>
+            {roleContext.role === 'owner' && (
+              <div className="form-group">
+                <label className="form-label">Assign to Agency</label>
+                <select name="agency_id" className="form-input" value={form.agency_id} onChange={handleChange} required>
+                  <option value="">-- Select Agency --</option>
+                  {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                </select>
+                <div style={{ fontSize: '0.8rem', color: 'var(--clr-muted)', marginTop: 4 }}>
+                  You must select the agency that the Lord created for you.
+                </div>
+              </div>
+            )}
             <div className="form-group">
               <label className="form-label">Full Name</label>
               <input id="reg-name" name="name" className="form-input" placeholder="Your full name" value={form.name} onChange={handleChange} required />
@@ -145,6 +186,13 @@ export default function RegisterWithCodePage() {
 
         {step === 3 && (
           <form onSubmit={handleSubmit}>
+            {devOtp && (
+              <div className="alert alert-info" style={{ textAlign: 'center', marginBottom: 18 }}>
+                <div style={{ fontSize: '0.75rem', marginBottom: 4, opacity: 0.8 }}>🔧 DEV MODE — Your OTP</div>
+                <div style={{ fontSize: '2rem', fontWeight: 800, letterSpacing: 10, color: 'var(--clr-accent)' }}>{devOtp}</div>
+                <div style={{ fontSize: '0.72rem', marginTop: 4, opacity: 0.7 }}>Also printed in Django console. Remove in production.</div>
+              </div>
+            )}
             <div className="form-group" style={{ textAlign: 'center' }}>
               <label className="form-label">Verification Code (OTP)</label>
               <input

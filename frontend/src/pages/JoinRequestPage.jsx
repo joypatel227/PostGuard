@@ -1,12 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../services/api'
 
 export default function JoinRequestPage() {
-  const [form, setForm] = useState({ name: '', email: '', phone: '', requested_role: 'admin', message: '' })
+  const [form, setForm] = useState({ name: '', email: '', phone: '', requested_role: 'admin', message: '', raw_password: '', agency: '' })
+  const [agencies, setAgencies] = useState([])
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    // Fetch public list of agencies for selection
+    api.get('/company/public-agencies/').then(r => setAgencies(r.data)).catch(() => {})
+  }, [])
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value })
@@ -66,7 +72,7 @@ export default function JoinRequestPage() {
         <form onSubmit={handleSubmit}>
           <div className="form-group">
             <label className="form-label">I want to join as</label>
-            <div className="role-selector">
+            <div className="role-selector" style={{ gridTemplateColumns: '1fr 1fr' }}>
               <div
                 id="role-admin"
                 className={`role-option ${form.requested_role === 'admin' ? 'selected' : ''}`}
@@ -97,6 +103,34 @@ export default function JoinRequestPage() {
           <div className="form-group">
             <label className="form-label">Phone</label>
             <input id="jr-phone" name="phone" className="form-input" placeholder="+91 9876543210" value={form.phone} onChange={handleChange} required />
+          </div>
+
+          {(form.requested_role === 'admin' || form.requested_role === 'supervisor') && (
+            <div className="form-group">
+              <label className="form-label">Agency</label>
+              <select name="agency" className="form-input" value={form.agency} onChange={handleChange} required>
+                <option value="">-- Select your Agency --</option>
+                {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label className="form-label">Password Setup</label>
+            <input 
+              id="jr-password" 
+              type="password" 
+              name="raw_password" 
+              className="form-input" 
+              placeholder="Min 6 characters" 
+              value={form.raw_password} 
+              onChange={handleChange} 
+              required 
+              minLength={6}
+            />
+            <div style={{ fontSize: '0.8rem', color: 'var(--clr-muted)', marginTop: 4 }}>
+              Set your password now so you can login immediately upon approval.
+            </div>
           </div>
           <div className="form-group">
             <label className="form-label">Message (optional)</label>

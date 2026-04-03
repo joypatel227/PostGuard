@@ -1,8 +1,5 @@
 from django.contrib import admin
-from .models import Company, Site, Guard
-
-# Register your models here.
-
-admin.site.register(Company)
+from .models import Agency, Site, Guard
+admin.site.register(Agency)
 admin.site.register(Site)
 admin.site.register(Guard)

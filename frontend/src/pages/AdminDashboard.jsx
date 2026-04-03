@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Sidebar from '../components/Sidebar'
 import api from '../services/api'
 
 export default function AdminDashboard() {
-  const [tab, setTab] = useState('overview')
+  const [tab, setTab] = useState(() => sessionStorage.getItem('admin_active_tab') || 'overview')
+  
+  useEffect(() => {
+    sessionStorage.setItem('admin_active_tab', tab)
+  }, [tab])
   const [supervisors, setSupervisors] = useState([])
   const [requests, setRequests] = useState([])
   const [codes, setCodes] = useState([])
@@ -11,6 +15,15 @@ export default function AdminDashboard() {
   const [newCode, setNewCode] = useState(null)
   const [copied, setCopied] = useState(false)
   const [msg, setMsg] = useState('')
+  const [toast, setToast] = useState('')
+  const toastTimer = useRef(null)
+
+  const showToast = (text) => {
+    setToast('')
+    requestAnimationFrame(() => requestAnimationFrame(() => setToast(text)))
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(''), 2200)
+  }
 
   const fetchSupervisors = useCallback(async () => {
     try { const r = await api.get('/auth/my-users/'); setSupervisors(r.data) } catch {}
@@ -22,7 +35,14 @@ export default function AdminDashboard() {
     try { const r = await api.get('/auth/my-codes/'); setCodes(r.data) } catch {}
   }, [])
 
-  useEffect(() => { fetchSupervisors(); fetchRequests(); fetchCodes() }, [fetchSupervisors, fetchRequests, fetchCodes])
+  useEffect(() => {
+    fetchSupervisors()
+    fetchRequests()
+    fetchCodes()
+    // Auto-refresh supervisors every 10s so new ones appear without manual refresh
+    const interval = setInterval(fetchSupervisors, 10000)
+    return () => clearInterval(interval)
+  }, [fetchSupervisors, fetchRequests, fetchCodes])
 
   const generateCode = async () => {
     setGenLoading(true); setNewCode(null)
@@ -32,17 +52,21 @@ export default function AdminDashboard() {
 
   const copyCode = (codeStr) => {
     navigator.clipboard.writeText(codeStr)
-    setMsg('📋 Code copied to clipboard!')
-    setTimeout(() => setMsg(''), 2000)
+    showToast('📋 Copied to clipboard!')
   }
 
   const deleteCode = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this active code?')) return
+    if (!window.confirm('Delete this active code? It can no longer be used.')) return
+    // Remove instantly from UI before the API call
+    setCodes(prev => prev.filter(c => c.id !== id))
+    if (newCode?.id === id) setNewCode(null)
     try {
-      await api.delete(`/auth/codes/${id}/`)
-      setMsg('🗑 Code deleted.')
+      await api.delete(`/auth/codes/${id}/delete/`)
+      showToast('🔑 Invite Code Successfully Deleted!')
       fetchCodes()
     } catch (e) {
+      // Restore on failure by refetching
+      fetchCodes()
       setMsg(`❌ ${e.response?.data?.detail || 'Error deleting code'}`)
     }
   }
@@ -106,13 +130,14 @@ export default function AdminDashboard() {
                   <div className="empty-state"><div className="empty-icon">👤</div><p>No supervisors yet.</p></div>
                 ) : (
                   <table>
-                    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Status</th><th>Joined</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Status</th><th>Joined</th></tr></thead>
                     <tbody>
                       {supervisors.map(s => (
                         <tr key={s.id}>
                           <td><strong>{s.name}</strong></td>
                           <td style={{ color: 'var(--clr-muted)' }}>{s.email}</td>
                           <td style={{ color: 'var(--clr-muted)' }}>{s.phone}</td>
+                          <td><span className={`badge badge-${s.role}`}>{s.role}</span></td>
                           <td><span className={`badge badge-${s.status}`}>{s.status}</span></td>
                           <td style={{ color: 'var(--clr-muted)', fontSize: '0.8rem' }}>{new Date(s.date_joined).toLocaleDateString()}</td>
                         </tr>
@@ -224,6 +249,7 @@ export default function AdminDashboard() {
           </>
         )}
       </main>
+      {toast && <div className="toast-popup">{toast}</div>}
     </div>
   )
 }
