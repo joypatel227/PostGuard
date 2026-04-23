@@ -15,6 +15,7 @@ export default function ProtectedRoute({ children, allowedRoles }) {
       owner: '/owner',
       admin: '/admin',
       supervisor: '/supervisor',
+      client: '/client',
     }
     return <Navigate to={redirectMap[user?.role] || '/login'} replace />
   }

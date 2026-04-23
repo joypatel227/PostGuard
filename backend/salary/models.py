@@ -1,5 +1,6 @@
 import calendar
 from django.db import models
+from django.utils import timezone
 
 
 class SalaryRecord(models.Model):
@@ -49,31 +50,63 @@ class SalaryRecord(models.Model):
 
     @classmethod
     def compute_for_guard(cls, guard, month, year):
-        """Calculate and return (or update) the salary record for a guard/month."""
-        from attendance.models import GuardAttendance
-        total_days  = calendar.monthrange(year, month)[1]
-        attendances = GuardAttendance.objects.filter(
+        """Calculate and return (or update) the salary record for a guard/month.
+        
+        Overtime (extra shifts on same day) count at 1x daily rate (Option A).
+        """
+        from company.models import Attendance
+        total_days = calendar.monthrange(year, month)[1]
+        attendances = Attendance.objects.filter(
             guard=guard, date__month=month, date__year=year
         )
-        days_present = attendances.filter(status="present").count()
-        days_half    = attendances.filter(status="half").count()
-        days_absent  = total_days - days_present - days_half
+        # Regular (non-overtime) records
+        regular_atts  = attendances.filter(is_overtime=False)
+        days_present  = regular_atts.filter(status__in=['present', 'late']).count()
+        days_absent   = regular_atts.filter(status='absent').count()
+
+        # Overtime records: each counts as 1 full extra day (Option A)
+        overtime_shifts = attendances.filter(is_overtime=True, status__in=['present', 'late']).count()
 
         daily_rate    = round(float(guard.monthly_salary) / total_days, 2)
-        amount_earned = round(daily_rate * (days_present + days_half * 0.5), 2)
+        amount_earned = round(daily_rate * (days_present + overtime_shifts), 2)
 
         record, _ = cls.objects.get_or_create(
             guard=guard, month=month, year=year,
-            defaults={"total_days": total_days, "monthly_salary": guard.monthly_salary,
-                      "daily_rate": daily_rate}
+            defaults={
+                "total_days":       total_days,
+                "monthly_salary":   guard.monthly_salary,
+                "daily_rate":       daily_rate,
+                "amount_earned":    amount_earned,   # ← was missing → caused NOT NULL violation
+                "amount_remaining": amount_earned,   # no payments yet on creation
+            }
         )
         record.total_days     = total_days
         record.days_present   = days_present
-        record.days_half      = days_half
         record.days_absent    = max(0, days_absent)
         record.monthly_salary = guard.monthly_salary
         record.daily_rate     = daily_rate
         record.amount_earned  = amount_earned
-        record.amount_remaining = max(0, amount_earned - record.advance_given - record.amount_paid)
+        record.notes          = f"Overtime shifts: {overtime_shifts} (each at 1× daily rate ₹{daily_rate})"
+        record.amount_remaining = round(amount_earned - float(record.advance_given) - float(record.amount_paid), 2)
         record.save()
         return record
+
+
+class SalaryPaymentLog(models.Model):
+    """Explicit history of every payment made towards a SalaryRecord (Online or Offline)."""
+    salary_record = models.ForeignKey(SalaryRecord, on_delete=models.CASCADE, related_name="payment_logs")
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_mode = models.CharField(max_length=10, choices=SalaryRecord.PAYMENT_MODE_CHOICES)
+    from_bank = models.ForeignKey(
+        "billing.BankAccount", null=True, blank=True, on_delete=models.SET_NULL
+    )
+    to_account_details = models.TextField(blank=True)
+    date = models.DateField(default=timezone.now)
+    created_by = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.payment_mode.capitalize()} payment of ₹{self.amount} to {self.salary_record.guard.name}"

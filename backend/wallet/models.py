@@ -16,19 +16,24 @@ class Wallet(models.Model):
 class WalletTransaction(models.Model):
     """Every credit/debit to any wallet."""
     TXN_TYPE_CHOICES = [
-        ("deposit",      "Deposit (cash added)"),
-        ("withdraw",     "Withdraw"),
-        ("give_guard",   "Given to Guard"),
+        ("deposit",         "Deposit"),
+        ("withdraw",        "Withdraw"),
+        ("give_guard",      "Given to Guard"),
         ("give_supervisor", "Given to Supervisor"),
-        ("fuel",         "Fuel Stop"),
-        ("salary_deduct","Salary Advance Deduction"),
-        ("transfer_in",  "Transfer Received"),
-        ("transfer_out", "Transfer Sent"),
+        ("fuel",            "Fuel Stop"),
+        ("salary_deduct",   "Salary Advance Deduction"),
+        ("transfer_in",     "Transfer Received"),
+        ("transfer_out",    "Transfer Sent"),
     ]
 
-    wallet       = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name="transactions")
-    amount       = models.DecimalField(max_digits=12, decimal_places=2)
-    txn_type     = models.CharField(max_length=30, choices=TXN_TYPE_CHOICES)
+    SOURCE_CHOICES = [
+        ("bank", "Bank Account"),
+        ("cash", "Cash"),
+    ]
+
+    wallet        = models.ForeignKey(Wallet, on_delete=models.CASCADE, related_name="transactions")
+    amount        = models.DecimalField(max_digits=12, decimal_places=2)
+    txn_type      = models.CharField(max_length=30, choices=TXN_TYPE_CHOICES)
     # Running balance after this transaction
     balance_after = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     related_user  = models.ForeignKey(
@@ -39,9 +44,15 @@ class WalletTransaction(models.Model):
         "company.Guard", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="wallet_transactions"
     )
-    note       = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    created_by = models.ForeignKey(
+    # Source/destination: bank account or cash
+    source        = models.CharField(max_length=10, choices=SOURCE_CHOICES, default="cash")
+    bank_account  = models.ForeignKey(
+        "billing.BankAccount", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="wallet_transactions"
+    )
+    note          = models.TextField(blank=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+    created_by    = models.ForeignKey(
         "accounts.User", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="created_wallet_txns"
     )

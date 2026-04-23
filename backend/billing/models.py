@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 
 class BankAccount(models.Model):
@@ -9,8 +10,16 @@ class BankAccount(models.Model):
     account_no   = models.CharField(max_length=30)
     ifsc         = models.CharField(max_length=20, blank=True)
     upi_id       = models.CharField(max_length=100, blank=True)
-    is_default   = models.BooleanField(default=False)
-    created_at   = models.DateTimeField(auto_now_add=True)
+    is_default        = models.BooleanField(default=False)
+    balance           = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    transaction_limit = models.DecimalField(max_digits=14, decimal_places=2, default=2000000)
+    created_at        = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            # When setting this account as default, unset all others for this agency
+            self.__class__.objects.filter(agency=self.agency, is_default=True).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.account_name} — {self.bank_name}"
@@ -88,3 +97,29 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"Payment ₹{self.amount_paid} for {self.bill.site.name} ({self.status})"
+
+
+class BankTransaction(models.Model):
+    """Log of every credit/debit for a bank account."""
+    TYPE_CHOICES = [
+        ("credit", "Credit (Money In)"),
+        ("debit",  "Debit (Money Out)"),
+    ]
+    
+    bank_account  = models.ForeignKey(BankAccount, on_delete=models.CASCADE, related_name="transactions")
+    type          = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    amount        = models.DecimalField(max_digits=12, decimal_places=2)
+    running_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)  # balance AFTER this txn
+    description   = models.CharField(max_length=255, blank=True)
+    category      = models.CharField(max_length=50, blank=True) # e.g. salary, billing, wallet
+    date          = models.DateField(default=timezone.now)
+    created_by    = models.ForeignKey("accounts.User", null=True, blank=True, on_delete=models.SET_NULL)
+    salary_record = models.ForeignKey("salary.SalaryRecord", on_delete=models.SET_NULL, null=True, blank=True, related_name="transactions")
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+
+    def __str__(self):
+        return f"{self.type.capitalize()}: ₹{self.amount} - {self.bank_account.account_name}"

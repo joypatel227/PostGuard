@@ -21,6 +21,14 @@ export default function JoinRequestPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
+    
+    // Phone validation: 10 digits OR starts with + and has 8-15 digits
+    const phoneRegex = /^(\d{10}|\+\d{8,15})$/
+    if (!phoneRegex.test(form.phone.replace(/[\s-]/g, ''))) {
+      setError('Invalid phone number. Use 10 digits or +CountryCode format.')
+      return
+    }
+
     setLoading(true)
     setError('')
     try {

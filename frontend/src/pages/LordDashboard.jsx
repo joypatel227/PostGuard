@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import { 
   AreaChart, Area, ResponsiveContainer, Tooltip 
 } from 'recharts'
 import { 
   Search, Plus, Check, X, 
   ArrowUpRight, Users as UsersIcon, Building2, 
-  UserCheck, ClipboardList, Info, Key, LayoutDashboard
+  UserCheck, Info, Key, LayoutDashboard
 } from 'lucide-react'
 import Sidebar from '../components/Sidebar'
 import api from '../services/api'
@@ -13,13 +14,18 @@ import { useAuth } from '../components/AuthContext'
 
 export default function LordDashboard() {
   const { user } = useAuth()
-  const [tab, setTab] = useState(() => sessionStorage.getItem('lord_active_tab') || 'overview')
+  const { tab: urlTab } = useParams()
+  const navigate = useNavigate()
+  const [tab, setTab] = useState(() => urlTab || sessionStorage.getItem('lord_active_tab') || 'overview')
   
+  useEffect(() => {
+    setTab(urlTab || 'overview')
+  }, [urlTab])
+
   useEffect(() => {
     sessionStorage.setItem('lord_active_tab', tab)
   }, [tab])
   const [admins, setAdmins] = useState([])
-  const [requests, setRequests] = useState([])
   const [codes, setCodes] = useState([])
   const [agencies, setAgencies] = useState([])
   const [totalNetwork, setTotalNetwork] = useState(0)
@@ -42,6 +48,44 @@ export default function LordDashboard() {
   const [toast, setToast] = useState('')
   const toastTimer = useRef(null)
 
+  // ── Mobile-Style Back Button Logic ───────────────────────────────────────────
+  const backState = useRef({ formsOpen: false, tab: 'overview' })
+  const lastBackPress = useRef(0)
+
+  useEffect(() => {
+    backState.current = { formsOpen: !!(showAddAgency || showAddOwner), tab: tab }
+  }, [showAddAgency, showAddOwner, tab])
+
+  useEffect(() => {
+    window.history.pushState({ active_dashboard: true }, '')
+    const handlePop = () => {
+      const state = backState.current
+      if (state.formsOpen) {
+        setShowAddAgency(false)
+        setShowAddOwner(false)
+        window.history.pushState({ active_dashboard: true }, '') 
+        return
+      }
+      if (state.tab !== 'overview') {
+        setTab('overview')
+        window.history.pushState({ active_dashboard: true }, '')
+        return
+      }
+      const now = Date.now()
+      if (now - lastBackPress.current < 2000) {
+        window.history.back()
+        return
+      } else {
+        lastBackPress.current = now
+        showToast('Press Back again to exit')
+        window.history.pushState({ active_dashboard: true }, '')
+      }
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [])
+  // ───────────────────────────────────────────────────────────────────────────
+
   const showToast = (text) => {
     setToast('')
     // Force remount so animation replays
@@ -54,10 +98,6 @@ export default function LordDashboard() {
 
   const fetchAdmins = useCallback(async () => {
     try { const r = await api.get('/auth/my-users/'); setAdmins(r.data) } catch {}
-  }, [])
-
-  const fetchRequests = useCallback(async () => {
-    try { const r = await api.get('/auth/join-requests/'); setRequests(r.data) } catch {}
   }, [])
 
   const fetchCodes = useCallback(async () => {
@@ -75,7 +115,16 @@ export default function LordDashboard() {
       setAgencyCount(r.data.agency_count)
       setLiveNetwork(r.data.live_users || 0)
       setLiveUserList(r.data.live_user_list || [])
-      if (r.data.charts) setTrends(r.data.charts)
+      
+      setTrends(prev => {
+        const liveHistory = prev.live || []
+        const newLive = [...liveHistory, { value: r.data.live_users || 0 }].slice(-15)
+        return {
+          agencies: r.data.charts?.agencies || [],
+          users: r.data.charts?.users || [],
+          live: newLive
+        }
+      })
     } catch {}
   }, [])
 
@@ -94,18 +143,22 @@ export default function LordDashboard() {
   // Auto-refresh logic
   useEffect(() => {
     fetchAdmins(); fetchAgencies(); fetchNetworkStats();
+    fetchCodes();
     
     // Heartbeat every 5 seconds (Lightweight)
     const hInterval = setInterval(sendHeartbeat, 5000)
     
     // Stats update every 15 seconds (Heavy Trends)
-    const sInterval = setInterval(fetchNetworkStats, 15000)
+    const sInterval = setInterval(() => {
+      fetchNetworkStats();
+      fetchCodes();
+    }, 15000)
     
     return () => {
       clearInterval(hInterval)
       clearInterval(sInterval)
     }
-  }, [tab, sendHeartbeat, fetchNetworkStats])
+  }, [tab, sendHeartbeat, fetchNetworkStats, fetchCodes])
 
   const generateCode = async () => {
     setGenLoading(true)
@@ -139,24 +192,7 @@ export default function LordDashboard() {
     }
   }
 
-  const approveReq = async (id) => {
-    try {
-      const r = await api.post(`/auth/join-requests/${id}/approve/`)
-      setMsg(`✅ Approved! Temp password: ${r.data.temp_password}`)
-      fetchRequests()
-      fetchAdmins()
-    } catch (e) {
-      setMsg(`❌ ${e.response?.data?.detail || 'Error'}`)
-    }
-  }
 
-  const rejectReq = async (id) => {
-    try {
-      await api.post(`/auth/join-requests/${id}/reject/`)
-      setMsg('Request rejected.')
-      fetchRequests()
-    } catch {}
-  }
 
   const handleCreateAgency = async (e) => {
     e.preventDefault()
@@ -173,6 +209,14 @@ export default function LordDashboard() {
 
   const handleCreateOwner = async (e) => {
     e.preventDefault()
+    
+    // Phone validation
+    const phoneRegex = /^(\d{10}|\+\d{8,15})$/
+    if (!phoneRegex.test(newOwnerForm.phone.replace(/[\s-]/g, ''))) {
+      showToast('❌ Invalid phone. Use 10 digits or +CountryCode')
+      return
+    }
+
     try {
       await api.post('/auth/create-owner/', newOwnerForm)
       showToast('👥 Owner created successfully!')
@@ -207,7 +251,6 @@ export default function LordDashboard() {
     }
   }
 
-  const pendingCount = requests.filter(r => r.status === 'pending').length
 
   const renderAvatar = (name) => (
     <div className="avatar-circle" style={{ 
@@ -256,7 +299,7 @@ export default function LordDashboard() {
             <div className="stats-row" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '24px' }}>
               {[
                 { label: 'Total Agencies', value: agencyCount, color: '#5B8CFF', data: trends.agencies },
-                { label: 'Total Users', value: totalNetwork, color: '#7C5CFF', data: trends.users },
+                { label: 'Total Network', value: totalNetwork, color: '#7C5CFF', data: trends.users },
                 { label: 'Live Now', value: liveNetwork, color: '#00E5A0', isLive: true, data: trends.live, sub: liveUserList }
               ].map((stat, i) => (
                 <div key={i} className="stat-card glass-card" style={{ padding: '24px', display: 'flex', flexDirection: 'column', minHeight: '200px' }}>
@@ -275,7 +318,7 @@ export default function LordDashboard() {
                         <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                           <div style={{ display: 'flex' }}>
                             {stat.sub.map((u, idx) => (
-                              <div key={u.id} style={{ 
+                              <div key={u.id} title={`${u.name} (${u.role})`} style={{ 
                                 width: '24px', height: '24px', 
                                 borderRadius: '50%', background: 'var(--grad-primary)', 
                                 border: '2px solid var(--clr-bg)', marginLeft: idx === 0 ? 0 : '-8px',
@@ -286,7 +329,7 @@ export default function LordDashboard() {
                             ))}
                           </div>
                           <small style={{ color: 'var(--clr-muted)', fontSize: '0.75rem' }}>
-                            {stat.sub[0].name.split(' ')[0]} {stat.sub.length > 1 ? `& ${stat.sub.length - 1} others` : 'is online'}
+                            {stat.sub.length === 1 ? '1 user is online' : `${stat.sub.length} users are online`}
                           </small>
                         </div>
                       )}
@@ -342,13 +385,10 @@ export default function LordDashboard() {
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                <button className="pill-btn btn-glow" onClick={() => setTab('requests')}>
-                  <ClipboardList size={18} /> Review Join Requests {pendingCount > 0 && `(${pendingCount})`}
-                </button>
-                <button className="pill-btn btn-glow" onClick={() => setTab('codes')}>
+                <button className="pill-btn btn-glow" onClick={() => navigate('/lord/codes')}>
                   <Key size={18} /> Generate Owner Code
                 </button>
-                <button className="pill-btn btn-glow" onClick={() => setTab('admins')}>
+                <button className="pill-btn btn-glow" onClick={() => navigate('/lord/admins')}>
                   <UsersIcon size={18} /> View All Owners
                 </button>
               </div>
@@ -532,86 +572,6 @@ export default function LordDashboard() {
                                 </div>
                               )}
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {tab === 'requests' && (
-          <div className="tab-content animate-fadeIn">
-            <div className="page-header">
-              <h1>📋 Join Requests</h1>
-              <p>Review and approve people requesting admin access</p>
-            </div>
-            {msg && (
-              <div className="card glass-card" style={{ borderColor: msg.startsWith('✅') ? 'var(--clr-success)' : 'var(--clr-danger)', marginBottom: '24px', padding: '16px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: msg.startsWith('✅') ? 'var(--clr-success)' : 'var(--clr-danger)' }}>
-                  {msg.startsWith('✅') ? <Check size={20} /> : <Info size={20} />}
-                  <span style={{ fontWeight: 600 }}>{msg}</span>
-                </div>
-              </div>
-            )}
-            
-            <div className="card glass-card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div className="table-wrap">
-                {requests.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon" style={{ opacity: 0.2 }}><ClipboardList size={64} /></div>
-                    <p>No join requests yet.</p>
-                  </div>
-                ) : (
-                  <table>
-                    <thead>
-                      <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
-                        <th style={{ padding: '20px 24px' }}>USER</th>
-                        <th>CONTACT</th>
-                        <th>MESSAGE</th>
-                        <th>STATUS</th>
-                        <th style={{ textAlign: 'right', paddingRight: '24px' }}>ACTIONS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {requests.map(r => (
-                        <tr key={r.id} className="table-row-hover">
-                          <td style={{ padding: '16px 24px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              {renderAvatar(r.name)}
-                              <strong>{r.name}</strong>
-                            </div>
-                          </td>
-                          <td>
-                            <div style={{ fontSize: '0.85rem' }}>{r.email}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--clr-muted)' }}>{r.phone}</div>
-                          </td>
-                          <td>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--clr-muted)', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                              {r.message || 'No message provided'}
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`badge ${r.status === 'pending' ? 'badge-pending' : r.status === 'approved' ? 'badge-approved' : 'badge-rejected'}`} style={{ 
-                              boxShadow: r.status === 'pending' ? '0 0 10px rgba(255, 169, 64, 0.1)' : 'none'
-                            }}>
-                              {r.status.toUpperCase()}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'right', paddingRight: '24px' }}>
-                            {r.status === 'pending' && (
-                              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                                <button className="btn btn-success btn-glow" style={{ padding: '8px 16px', fontSize: '0.8rem' }} onClick={() => approveReq(r.id)}>
-                                  <Check size={14} /> Approve
-                                </button>
-                                <button className="btn btn-danger" style={{ padding: '8px 16px', fontSize: '0.8rem' }} onClick={() => rejectReq(r.id)}>
-                                  <X size={14} /> Reject
-                                </button>
-                              </div>
-                            )}
                           </td>
                         </tr>
                       ))}

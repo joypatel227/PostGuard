@@ -53,7 +53,7 @@ def site_visit_detail(request, pk):
         if request.user.role not in ['owner', 'admin']:
             return Response({'detail': 'Not allowed.'}, status=403)
         visit.delete()
-        return Response({'detail': 'Deleted.'}, status=204)
+        return Response(status=204)
 
     serializer = SiteVisitSerializer(visit, data=request.data, partial=True)
     if serializer.is_valid():

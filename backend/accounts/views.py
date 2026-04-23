@@ -65,9 +65,14 @@ def me_view(request):
         if User.objects.exclude(pk=user.pk).filter(phone=user.phone).exists():
             return Response({'detail': 'Phone already in use.'}, status=400)
         user.save()
-        return Response(UserSerializer(user).data)
         
-    return Response(UserSerializer(user).data)
+    data = UserSerializer(user).data
+    if user.role == 'guard':
+        from company.models import Guard
+        guard = Guard.objects.filter(phone=user.phone, is_active=True).first()
+        if guard:
+            data['guard_id'] = guard.id
+    return Response(data)
 
 
 # ── Lord Stats ────────────────────────────────────────────────────────────────
@@ -116,15 +121,11 @@ def lord_stats_view(request):
         ag_at_day = Agency.objects.filter(created_at__lte=day).count()
         agencies_trend.append({'value': ag_at_day})
         
-        # User Growth
+        # Network Growth (Users + Guards + Sites)
         us_at_day = User.objects.exclude(role='lord').filter(date_joined__lte=day).count()
-        users_trend.append({'value': us_at_day})
-        
-        # Simulated Live Activity Trend (since we don't have historical live logs yet)
-        # We'll use a semi-random variation around current live users for visual effect
-        import random
-        v = max(0, live_now + random.randint(-1, 1) if live_now > 1 else live_now)
-        live_trend.append({'value': v})
+        gd_at_day = Guard.objects.filter(created_at__lte=day).count()
+        st_at_day = Site.objects.filter(created_at__lte=day).count()
+        users_trend.append({'value': us_at_day + gd_at_day + st_at_day})
 
     return Response({
         'total_network': total,
@@ -133,8 +134,7 @@ def lord_stats_view(request):
         'live_user_list': live_user_list,
         'charts': {
             'agencies': agencies_trend,
-            'users': users_trend,
-            'live': live_trend
+            'users': users_trend
         }
     })
 
@@ -150,11 +150,18 @@ def my_users_view(request):
 @permission_classes([IsAuthenticated])
 def generate_code_view(request):
     user = request.user
-    role_map = {'lord': 'owner', 'owner': 'admin', 'admin': 'supervisor'}
+    role_map = {'lord': ['owner'], 'owner': ['admin', 'supervisor'], 'admin': ['supervisor']}
     if user.role not in role_map:
         return Response({'detail': 'Not allowed.'}, status=403)
 
-    role_for = role_map[user.role]
+    # Optional explicit role request, fallback to primary default
+    requested_role = request.data.get('role')
+    if requested_role:
+        if requested_role not in role_map[user.role]:
+            return Response({'detail': f'Not allowed to generate code for {requested_role}.'}, status=403)
+        role_for = requested_role
+    else:
+        role_for = role_map[user.role][0]
 
     invite = InviteCode.objects.create(created_by=user, role_for=role_for)
     return Response(InviteCodeSerializer(invite).data, status=201)
@@ -333,10 +340,13 @@ def join_request_view(request):
 @permission_classes([IsAuthenticated])
 def list_join_requests_view(request):
     user = request.user
-    role_filter = {'lord': 'owner', 'owner': 'admin', 'admin': 'supervisor'}
+    role_filter = {'lord': ['owner'], 'owner': ['admin', 'supervisor'], 'admin': ['supervisor']}
     if user.role not in role_filter:
         return Response({'detail': 'Not allowed.'}, status=403)
-    qs = JoinRequest.objects.filter(requested_role=role_filter[user.role])
+        
+    allowed_roles = role_filter[user.role]
+    qs = JoinRequest.objects.filter(requested_role__in=allowed_roles)
+    
     if user.role in ['owner', 'admin']:
         if user.agency:
             qs = qs.filter(agency=user.agency)
@@ -353,7 +363,7 @@ def list_join_requests_view(request):
 @permission_classes([IsAuthenticated])
 def approve_join_request_view(request, pk):
     user = request.user
-    role_map = {'lord': 'owner', 'owner': 'admin', 'admin': 'supervisor'}
+    role_map = {'lord': ['owner'], 'owner': ['admin', 'supervisor'], 'admin': ['supervisor']}
     if user.role not in role_map:
         return Response({'detail': 'Not allowed.'}, status=403)
 
@@ -362,7 +372,7 @@ def approve_join_request_view(request, pk):
     except JoinRequest.DoesNotExist:
         return Response({'detail': 'Not found or already processed.'}, status=404)
 
-    if join_req.requested_role != role_map[user.role]:
+    if join_req.requested_role not in role_map[user.role]:
         return Response({'detail': 'Role scope mismatch.'}, status=403)
 
     if User.objects.filter(email=join_req.email).exists():
@@ -450,6 +460,66 @@ def send_otp_view(request):
     otp = generate_otp(phone)
     return Response({'detail': 'OTP sent (check console).', 'otp': otp, 'phone': phone})
 
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def guard_send_otp_view(request):
+    """Specific hook for guards to request OTP. Validates guard exists."""
+    from company.models import Guard
+    phone = request.data.get('phone', '').strip()
+    if not phone:
+        return Response({'detail': 'Phone is required.'}, status=400)
+    
+    if not Guard.objects.filter(phone=phone, is_active=True).exists():
+        return Response({'detail': 'No active guard found with this phone number.'}, status=404)
+        
+    otp = generate_otp(phone)
+    return Response({'detail': 'OTP sent (check console).', 'otp': otp, 'phone': phone})
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def guard_verify_otp_view(request):
+    """Verifies OTP and returns JWT tokens for Guard."""
+    from company.models import Guard
+    phone = request.data.get('phone', '').strip()
+    otp_input = request.data.get('otp', '').strip()
+    
+    if not phone or not otp_input:
+        return Response({'detail': 'Phone and OTP are required.'}, status=400)
+        
+    if not verify_otp(phone, otp_input):
+        return Response({'detail': 'Invalid or expired OTP.'}, status=400)
+        
+    try:
+        guard = Guard.objects.get(phone=phone, is_active=True)
+    except Guard.DoesNotExist:
+        return Response({'detail': 'Guard not found.'}, status=404)
+        
+    # Get or create a User account for the guard to satisfy SimpleJWT
+    guard_user, created = User.objects.get_or_create(
+        phone=phone,
+        defaults={
+            'email': f"{phone}@guard.postguard.internal",
+            'name': guard.name,
+            'role': 'guard',
+            'status': 'approved',
+            'agency': guard.agency
+        }
+    )
+    
+    # Optional: Update tokens if agency or name changed
+    if not created and (guard_user.name != guard.name or guard_user.agency != guard.agency):
+        guard_user.name = guard.name
+        guard_user.agency = guard.agency
+        guard_user.save()
+        
+    tokens = get_tokens_for_user(guard_user)
+    return Response({
+        'detail': 'Login successful.',
+        'tokens': tokens,
+        'user': UserSerializer(guard_user).data,
+        'guard_id': guard.id
+    })
+
 
 # ── Delete Account ────────────────────────────────────────────────────────────
 
@@ -457,7 +527,7 @@ def send_otp_view(request):
 @permission_classes([IsAuthenticated])
 def delete_account_view(request):
     request.user.delete()
-    return Response({'detail': 'Account deleted.'})
+    return Response(status=204)
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
@@ -470,4 +540,116 @@ def delete_user_view(request, pk):
         return Response({'detail': 'Not found.'}, status=404)
         
     target.delete()
-    return Response({'detail': 'User deleted.'}, status=204)
+    return Response(status=204)
+
+
+# ── Owner Dashboard Stats ────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def owner_stats_view(request):
+    """Stats for owner/admin dashboard."""
+    if request.user.role not in ['owner', 'admin']:
+        return Response({'detail': 'Not allowed.'}, status=403)
+    agency = request.user.agency
+    if not agency:
+        return Response({'site_count': 0, 'guard_count': 0, 'guard_onduty': 0,
+                        'supervisor_count': 0, 'admin_count': 0, 'agency_name': ''})
+    from company.models import Site, Guard
+    site_count       = Site.objects.filter(agency=agency).count()
+    guard_count      = Guard.objects.filter(agency=agency).count()
+    guard_onduty     = Guard.objects.filter(agency=agency, is_on_duty=True).count()
+    supervisor_count = User.objects.filter(agency=agency, role='supervisor').count()
+    admin_count      = User.objects.filter(agency=agency, role='admin').count()
+    return Response({
+        'site_count': site_count,
+        'guard_count': guard_count,
+        'guard_onduty': guard_onduty,
+        'supervisor_count': supervisor_count,
+        'admin_count': admin_count,
+        'agency_name': agency.name,
+        'agency_created_at': agency.created_at,
+    })
+
+
+# ── Agency Users ─────────────────────────────────────────────────────────────
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def agency_users_view(request):
+    """List all admins/supervisors in the caller's agency."""
+    if request.user.role not in ['owner', 'admin']:
+        return Response({'detail': 'Not allowed.'}, status=403)
+    agency = request.user.agency
+    if not agency:
+        return Response([])
+    role_filter = request.query_params.get('role')
+    qs = User.objects.filter(agency=agency).exclude(role__in=['lord', 'owner'])
+    if role_filter:
+        qs = qs.filter(role=role_filter)
+    return Response(UserSerializer(qs, many=True).data)
+
+
+# ── Create Agency User ────────────────────────────────────────────────────────
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_agency_user_view(request):
+    """Owner can create admins/supervisors. Admin can create supervisors."""
+    if request.user.role not in ['owner', 'admin']:
+        return Response({'detail': 'Not allowed.'}, status=403)
+    agency = request.user.agency
+    if not agency:
+        return Response({'detail': 'No agency linked to your account.'}, status=400)
+        
+    data  = request.data
+    role  = data.get('role', 'supervisor')
+    
+    if role == 'admin' and request.user.role != 'owner':
+        return Response({'detail': 'Only owners can create admins.'}, status=403)
+        
+    if role == 'client' and request.user.role != 'owner':
+        return Response({'detail': 'Only owners can create clients.'}, status=403)
+        
+    email = data.get('email', '').strip()
+    phone = data.get('phone', '').strip()
+    if not email:
+        return Response({'detail': 'Email is required.'}, status=400)
+    if User.objects.filter(email=email).exists():
+        return Response({'detail': 'Email already registered.'}, status=400)
+    if phone and User.objects.filter(phone=phone).exists():
+        return Response({'detail': 'Phone already registered.'}, status=400)
+        
+    new_user = User.objects.create_user(
+        email=email,
+        name=data.get('name', ''),
+        phone=phone or f'u_{email.split("@")[0][:8]}',
+        password=data.get('password', email.split('@')[0]),
+        role=role,
+        status='approved',
+        created_by=request.user,
+        agency=agency,
+    )
+    Wallet.objects.get_or_create(user=new_user)
+    return Response(UserSerializer(new_user).data, status=201)
+
+
+# ── Delete Agency User ────────────────────────────────────────────────────────
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_agency_user_view(request, pk):
+    """Owner can delete admins/supervisors from their agency."""
+    if request.user.role not in ['owner', 'admin']:
+        return Response({'detail': 'Not allowed.'}, status=403)
+    try:
+        target = User.objects.get(pk=pk, agency=request.user.agency)
+    except User.DoesNotExist:
+        return Response({'detail': 'Not found.'}, status=404)
+    if target.role in ['lord', 'owner']:
+        return Response({'detail': 'Cannot delete owner or lord.'}, status=403)
+    # Admin can only delete supervisors
+    if request.user.role == 'admin' and target.role != 'supervisor':
+        return Response({'detail': 'Not allowed.'}, status=403)
+    target.delete()
+    return Response(status=204)

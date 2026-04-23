@@ -39,6 +39,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         ("owner",      "Owner"),
         ("admin",      "Admin"),
         ("supervisor", "Supervisor"),
+        ("guard",      "Guard"),
+        ("client",     "Site Client"),
     ]
     STATUS_CHOICES = [
         ("pending",  "Pending"),

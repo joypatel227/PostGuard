@@ -14,8 +14,14 @@ urlpatterns = [
     path('codes/<int:pk>/delete/',   views.delete_code_view,            name='delete-code'),
     path('use-code/',                views.use_code_view,               name='use-code'),
     
-    # Owners
+    # Owners (Lord only)
     path('create-owner/',            views.create_owner_view,           name='create-owner'),
+
+    # Owner dashboard
+    path('owner-stats/',             views.owner_stats_view,            name='owner-stats'),
+    path('agency-users/',            views.agency_users_view,           name='agency-users'),
+    path('create-agency-user/',      views.create_agency_user_view,     name='create-agency-user'),
+    path('agency-users/<int:pk>/delete/', views.delete_agency_user_view, name='delete-agency-user'),
 
     # Join requests
     path('join-request/',                      views.join_request_view,            name='join-request'),
@@ -29,4 +35,6 @@ urlpatterns = [
     path('users/<int:pk>/delete/', views.delete_user_view, name='delete-user'),
     path('delete-account/', views.delete_account_view, name='delete-account'),
     path('send-otp/',       views.send_otp_view,       name='send-otp'),
+    path('guard-send-otp/', views.guard_send_otp_view, name='guard-send-otp'),
+    path('guard-verify-otp/', views.guard_verify_otp_view, name='guard-verify-otp'),
 ]

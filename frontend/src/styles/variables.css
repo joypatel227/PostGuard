@@ -1,0 +1,84 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PostGuard — Design Tokens
+   All colour, spacing, typography, and shadow values live here.
+   Import this file in index.css or main.jsx.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Brand ─────────────────────────────────────────────────────────── */
+  --clr-primary:     #7C5CFF;
+  --clr-primary-glow: rgba(124, 92, 255, 0.35);
+  --clr-success:     #00E5A0;
+  --clr-danger:      #FF6B6B;
+  --clr-warning:     #FFA940;
+  --clr-info:        #5B8CFF;
+
+  /* ── Surface (dark theme) ───────────────────────────────────────────── */
+  --clr-bg:          #0d0f1a;
+  --clr-surface:     #13162a;
+  --clr-surface-2:   rgba(255, 255, 255, 0.04);
+  --clr-surface-3:   rgba(255, 255, 255, 0.08);
+  --clr-border:      rgba(255, 255, 255, 0.08);
+  --clr-muted:       rgba(255, 255, 255, 0.45);
+  --clr-text:        #ffffff;
+
+  /* ── Gradients ─────────────────────────────────────────────────────── */
+  --grad-primary:    linear-gradient(135deg, #7C5CFF 0%, #5B8CFF 100%);
+  --grad-success:    linear-gradient(135deg, #00E5A0 0%, #00B37A 100%);
+  --grad-card:       linear-gradient(135deg, rgba(124,92,255,0.06) 0%, rgba(0,229,160,0.03) 100%);
+
+  /* ── Shadows ───────────────────────────────────────────────────────── */
+  --shadow-sm:   0 2px 8px  rgba(0, 0, 0, 0.3);
+  --shadow-md:   0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-lg:   0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 8px 24px var(--clr-primary-glow);
+
+  /* ── Radius ────────────────────────────────────────────────────────── */
+  --radius-sm:   8px;
+  --radius-md:   14px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+  --radius-full: 9999px;
+
+  /* ── Spacing ───────────────────────────────────────────────────────── */
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+
+  /* ── Typography ────────────────────────────────────────────────────── */
+  --font-sans:  'Inter', 'Outfit', system-ui, sans-serif;
+  --font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+  --text-xs:    0.72rem;
+  --text-sm:    0.85rem;
+  --text-base:  1rem;
+  --text-lg:    1.125rem;
+  --text-xl:    1.25rem;
+  --text-2xl:   1.5rem;
+  --text-3xl:   2rem;
+
+  /* ── Sidebar ───────────────────────────────────────────────────────── */
+  --sidebar-width:       260px;
+  --sidebar-collapsed:   72px;
+
+  /* ── Animation ─────────────────────────────────────────────────────── */
+  --transition-fast:   all 0.15s ease;
+  --transition-base:   all 0.25s ease;
+  --transition-slow:   all 0.4s ease;
+}
+
+/* Light theme override */
+[data-theme="light"] {
+  --clr-bg:        #f4f5fb;
+  --clr-surface:   #ffffff;
+  --clr-surface-2: rgba(0, 0, 0, 0.04);
+  --clr-surface-3: rgba(0, 0, 0, 0.07);
+  --clr-border:    rgba(0, 0, 0, 0.08);
+  --clr-muted:     rgba(0, 0, 0, 0.4);
+  --clr-text:      #111827;
+}

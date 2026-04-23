@@ -49,6 +49,14 @@ export default function RegisterWithCodePage() {
       setError('Passwords do not match.')
       return
     }
+
+    // Phone validation
+    const phoneRegex = /^(\d{10}|\+\d{8,15})$/
+    if (!phoneRegex.test(form.phone.replace(/[\s-]/g, ''))) {
+      setError('Invalid phone number. Use 10 digits or +CountryCode format.')
+      return
+    }
+
     setLoading(true)
     setError('')
     try {
